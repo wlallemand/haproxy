@@ -712,22 +712,21 @@ static int bind_parse_ciphersuites(char **args, int cur_arg, struct proxy *px, s
 static int bind_parse_crt(char **args, int cur_arg, struct proxy *px, struct bind_conf *conf, char **err)
 {
 	char path[MAXPATHLEN];
+	char *crt = args[cur_arg + 1];
 
-	if (!*args[cur_arg + 1]) {
+	if (!crt) {
 		memprintf(err, "'%s' : missing certificate location", args[cur_arg]);
 		return ERR_ALERT | ERR_FATAL;
 	}
-
-	if ((*args[cur_arg + 1] != '/' ) && global_ssl.crt_base) {
-		if ((strlen(global_ssl.crt_base) + 1 + strlen(args[cur_arg + 1]) + 1) > sizeof(path) ||
-		    snprintf(path, sizeof(path), "%s/%s",  global_ssl.crt_base, args[cur_arg + 1]) > sizeof(path)) {
+	if ((*crt != '/' ) && global_ssl.crt_base) {
+		if ((strlen(global_ssl.crt_base) + 1 + strlen(crt) + 1) > sizeof(path) ||
+		    snprintf(path, sizeof(path), "%s/%s",  global_ssl.crt_base, crt) > sizeof(path)) {
 			memprintf(err, "'%s' : path too long", args[cur_arg]);
 			return ERR_ALERT | ERR_FATAL;
 		}
-		return ssl_sock_load_cert(path, conf, err);
+		crt = path;
 	}
-
-	return ssl_sock_load_cert(args[cur_arg + 1], conf, err);
+	return ssl_sock_load_cert(crt, conf, err);
 }
 
 /* parse the "crt-list" bind keyword. Returns a set of ERR_* flags possibly with an error in <err>. */
