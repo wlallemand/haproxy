@@ -33,9 +33,13 @@
 #include <haproxy/api.h>
 #include <haproxy/base64.h>
 #include <haproxy/cfgparse.h>
+#include <haproxy/log.h>
 #include <haproxy/errors.h>
 #include <haproxy/listener.h>
 #include <haproxy/openssl-compat.h>
+#include <haproxy/peers.h>
+#include <haproxy/proxy.h>
+#include <haproxy/sink.h>
 #include <haproxy/ssl_sock.h>
 #include <haproxy/ssl_utils.h>
 #include <haproxy/tools.h>
@@ -726,7 +730,10 @@ static int bind_parse_crt(char **args, int cur_arg, struct proxy *px, struct bin
 		}
 		crt = path;
 	}
-	return ssl_sock_load_cert(crt, conf, err);
+	if (!list_append_word(&conf->crt_path, crt, err))
+		return ERR_ALERT| ERR_FATAL;
+
+	return ERR_NONE;
 }
 
 /* parse the "crt-list" bind keyword. Returns a set of ERR_* flags possibly with an error in <err>. */
@@ -1868,9 +1875,75 @@ static int ssl_parse_skip_self_issued_ca(char **args, int section_type, struct p
 #endif
 }
 
+/* Load the certificates from the bind_conf crt list, then free the list */
+static int ssl_bind_conf_crt_precheck(struct bind_conf *bind_conf)
+{
+	int code = ERR_NONE;
+	struct wordlist *wl, *wlb;
+
+	list_for_each_entry_safe(wl, wlb, &bind_conf->crt_path, list) {
+		char *err = NULL;
+
+		code |= ssl_sock_load_cert(wl->s, bind_conf, &err);
+		if (((code & (ERR_WARN|ERR_ALERT)) == ERR_WARN))
+			ha_warning("parsing [%s:%d] : '%s %s' : %s\n", bind_conf->file, bind_conf->line, "crt", wl->s, err);
+		else
+			ha_alert("parsing [%s:%d] : '%s %s' : %s\n", bind_conf->file, bind_conf->line, "crt", wl->s, err);
+
+		free(err);
+		if (code & ERR_FATAL)
+			goto out;
+
+		free(wl->s);
+		LIST_DELETE(&wl->list);
+		free(wl);
+	}
+out:
+	return code;
+}
 
 
 
+/* This function cross all crt path in bind_conf in order to resolve them */
+static int ssl_crt_precheck()
+{
+	struct peers *curpeers = cfg_peers;
+	int code = ERR_NONE;
+	/* array with ptr to list of all proxies */
+	struct proxy *all_proxies[] = { proxies_list, sink_proxies_list, cfg_log_forward, NULL};
+	struct proxy *p;
+	int i;
+
+	for (curpeers = cfg_peers; curpeers; curpeers = curpeers->next) {
+		struct bind_conf *bind_conf;
+		if (!curpeers->peers_fe)
+			continue;
+
+		list_for_each_entry(bind_conf, &curpeers->peers_fe->conf.bind, by_fe) {
+			code |= ssl_bind_conf_crt_precheck(bind_conf);
+			if (code & ERR_FATAL)
+				goto out;
+		}
+	}
+
+	/* tries all list of proxies */
+	for (i = 0, p = all_proxies[i]; p; i++, p = all_proxies[i]) {
+		/* pass through all bind_conf */
+		while (p) {
+			struct bind_conf *bind_conf;
+
+			list_for_each_entry(bind_conf, &p->conf.bind, by_fe) {
+				code |= ssl_bind_conf_crt_precheck(bind_conf);
+				if (code & ERR_FATAL)
+					goto out;
+			}
+			p = p->next;
+		}
+	}
+out:
+	return code;
+}
+REGISTER_PRE_CHECK(ssl_crt_precheck);
 
 /* Note: must not be declared <const> as its list will be overwritten.
  * Please take care of keeping this list alphabetically sorted, doing so helps

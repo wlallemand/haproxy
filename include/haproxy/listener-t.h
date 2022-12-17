@@ -183,6 +183,7 @@ struct bind_conf {
 	struct eb_root sni_w_ctx;  /* sni_ctx tree of all known certs wildcards sorted by name */
 	struct tls_keys_ref *keys_ref; /* TLS ticket keys reference */
 
+	struct list crt_path;       /* list of CRT path (wordlist) on the bind line */
 	char *ca_sign_file;        /* CAFile used to generate and sign server certificates */
 	char *ca_sign_pass;        /* CAKey passphrase */
 

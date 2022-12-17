@@ -1434,6 +1434,7 @@ struct bind_conf *bind_conf_alloc(struct proxy *fe, const char *file,
 	bind_conf->frontend = fe;
 	bind_conf->severity_output = CLI_SEVERITY_NONE;
 #ifdef USE_OPENSSL
+	LIST_INIT(&bind_conf->crt_path);
 	HA_RWLOCK_INIT(&bind_conf->sni_lock);
 	bind_conf->sni_ctx = EB_ROOT;
 	bind_conf->sni_w_ctx = EB_ROOT;
