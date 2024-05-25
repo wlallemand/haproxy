@@ -3329,6 +3329,11 @@ static int ssl_sock_put_ckch_into_ctx(const char *path, struct ckch_store *store
 
 	ERR_clear_error();
 
+	/* Load certificate chain */
+	errcode |= ssl_sock_load_cert_chain(path, data, ctx, &find_chain, err);
+	if (errcode & ERR_CODE)
+		goto end;
+
 	if (SSL_CTX_use_PrivateKey(ctx, data->key) <= 0) {
 		int ret;
 
@@ -3339,10 +3344,6 @@ static int ssl_sock_put_ckch_into_ctx(const char *path, struct ckch_store *store
 		return errcode;
 	}
 
-	/* Load certificate chain */
-	errcode |= ssl_sock_load_cert_chain(path, data, ctx, &find_chain, err);
-	if (errcode & ERR_CODE)
-		goto end;
 
 #ifdef HAVE_DH
 	/* store a NULL pointer to indicate we have not yet loaded
