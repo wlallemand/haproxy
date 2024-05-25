@@ -26,7 +26,7 @@
 #if (defined SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB && !defined OPENSSL_NO_OCSP)
 #include <openssl/ocsp.h>
 #endif
-#ifndef OPENSSL_NO_DH
+#ifdef OPENSSL_NO_DH
 #include <openssl/dh.h>
 #endif
 #if defined(USE_ENGINE) && !defined(OPENSSL_NO_ENGINE)
@@ -48,6 +48,12 @@
 #include <haproxy/quic_openssl_compat.h>
 #endif
 
+#ifdef USE_OPENSSL_LIGHTER
+#undef SSL_MODE_ASYNC
+#undef SSL_READ_EARLY_DATA_SUCCESS
+#undef SSL_CTRL_SET_TLSEXT_TICKET_KEY_CB
+#endif
+
 
 #if defined(LIBRESSL_VERSION_NUMBER)
 /* LibreSSL is a fork of OpenSSL 1.0.1g but pretends to be 2.0.0, thus
@@ -66,7 +72,7 @@
 #define OpenSSL_version_num     SSLeay
 #endif
 
-#if (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x2070100fL) || defined(OPENSSL_IS_BORINGSSL) || (!defined(LIBRESSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= 0x10100000L))
+#if (!defined(USE_OPENSSL_LIGHTER) && (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x2070100fL) || defined(OPENSSL_IS_BORINGSSL) || (!defined(LIBRESSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= 0x10100000L)))
 #define HAVE_SSL_EXTRACT_RANDOM
 #endif
 
@@ -79,11 +85,11 @@
 #define HAVE_ASN1_TIME_TO_TM
 #endif
 
-#if (defined(SSL_CLIENT_HELLO_CB) || defined(OPENSSL_IS_BORINGSSL))
+#if (!defined(USE_OPENSSL_LIGHTER) && (defined(SSL_CLIENT_HELLO_CB) || defined(OPENSSL_IS_BORINGSSL)))
 #define HAVE_SSL_CLIENT_HELLO_CB
 #endif
 
-#if ((OPENSSL_VERSION_NUMBER >= 0x1000200fL) && !defined(OPENSSL_NO_TLSEXT) && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_IS_BORINGSSL))
+#if (!defined(USE_OPENSSL_LIGHTER) && ((OPENSSL_VERSION_NUMBER >= 0x1000200fL) && !defined(OPENSSL_NO_TLSEXT) && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_IS_BORINGSSL)))
 #define HAVE_SSL_CTX_ADD_SERVER_CUSTOM_EXT
 #endif
 
@@ -100,7 +106,7 @@
 #define HAVE_SSL_SCTL
 #endif
 
-#if (HA_OPENSSL_VERSION_NUMBER >= 0x10101000L) || defined(USE_OPENSSL_AWSLC) || (defined(USE_OPENSSL_WOLFSSL) && defined(HAVE_SECRET_CALLBACK))
+#if (!defined(USE_OPENSSL_LIGHTER) && (HA_OPENSSL_VERSION_NUMBER >= 0x10101000L) || defined(USE_OPENSSL_AWSLC) || (defined(USE_OPENSSL_WOLFSSL) && defined(HAVE_SECRET_CALLBACK)))
 #define HAVE_SSL_KEYLOG
 #endif
 
@@ -119,7 +125,7 @@
 #endif
 
 
-#if defined(SSL_CTX_set_security_level) || HA_OPENSSL_VERSION_NUMBER >= 0x1010100fL
+#if !defined(USE_OPENSSL_LIGHTER) && (defined(SSL_CTX_set_security_level) || HA_OPENSSL_VERSION_NUMBER >= 0x1010100fL)
 #define HAVE_SSL_SET_SECURITY_LEVEL
 #endif
 
@@ -146,6 +152,16 @@
 
 #if ((HA_OPENSSL_VERSION_NUMBER < 0x1000000fL) && !defined(X509_get_X509_PUBKEY))
 #define X509_get_X509_PUBKEY(x) ((x)->cert_info->key)
+#endif
+
+#if (!defined(USE_OPENSSL_LIGHTER) && !defined(OPENSSL_NO_DH))
+#define HAVE_DH
+#endif
+
+#if !defined(USE_OPENSSL_LIGHTER)
+#define HAVE_SSL_SESSION_CACHE
+#define HAVE_SSL_CA
+#define HAVE_SSL_RENEG
 #endif
 
 
@@ -245,7 +261,7 @@ static inline const OCSP_CERTID *OCSP_SINGLERESP_get0_id(const OCSP_SINGLERESP *
 }
 #endif
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 static inline int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
 {
 	/* Implements only the bare necessities for HAProxy */

@@ -608,7 +608,7 @@ int ssl_sock_load_pem_into_ckch(const char *path, char *buf, struct ckch_data *d
 	key = PEM_read_bio_PrivateKey(in, NULL, NULL, NULL);
 	/* no need to check for errors here, because the private key could be loaded later */
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 	/* Seek back to beginning of file */
 	if (BIO_reset(in) == -1) {
 		memprintf(err, "%san error occurred while reading the file '%s'.\n",

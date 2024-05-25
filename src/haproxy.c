@@ -3817,7 +3817,7 @@ int main(int argc, char **argv)
 				/* should never get there */
 				exit(EXIT_FAILURE);
 			}
-#if defined(USE_OPENSSL) && !defined(OPENSSL_NO_DH)
+#if defined(USE_OPENSSL) && defined(HAVE_DH)
 			ssl_free_dh();
 #endif
 			exit(0); /* parent must leave */

@@ -34,6 +34,7 @@
 #include <haproxy/tools.h>
 #include <haproxy/vars.h>
 
+#if !defined(USE_OPENSSL_LIGHTER)
 
 /***** Below are some sample fetching functions for ACL/patterns *****/
 
@@ -2457,3 +2458,5 @@ static struct acl_kw_list acl_kws = {ILH, {
 }};
 
 INITCALL1(STG_REGISTER, acl_register_keywords, &acl_kws);
+
+#endif /* ! USE_OPENSSL_LIGHTER */

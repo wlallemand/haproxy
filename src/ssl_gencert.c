@@ -230,7 +230,7 @@ static SSL_CTX *ssl_sock_do_create_cert(const char *servername, struct bind_conf
 
 	if (newcrt) X509_free(newcrt);
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 #if (HA_OPENSSL_VERSION_NUMBER < 0x3000000fL)
 	SSL_CTX_set_tmp_dh_callback(ssl_ctx, ssl_get_tmp_dh_cbk);
 #else

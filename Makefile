@@ -32,6 +32,7 @@
 #   USE_LIBCRYPT            : enable encrypted passwords using -lcrypt
 #   USE_CRYPT_H             : set it if your system requires including crypt.h
 #   USE_GETADDRINFO         : use getaddrinfo() to resolve IPv6 host names.
+#   USE_OPENSSL_LIGHTER     : strip features of OpenSSL not available in alternative implementations
 #   USE_OPENSSL             : enable use of OpenSSL. Recommended, but see below.
 #   USE_OPENSSL_AWSLC       : enable use of AWS-LC
 #   USE_OPENSSL_WOLFSSL     : enable use of wolfSSL with the OpenSSL API
@@ -343,7 +344,8 @@ use_opts = USE_EPOLL USE_KQUEUE USE_NETFILTER USE_POLL                        \
            USE_THREAD_DUMP USE_EVPORTS USE_OT USE_QUIC USE_PROMEX             \
            USE_MEMORY_PROFILING USE_SHM_OPEN                                  \
            USE_STATIC_PCRE USE_STATIC_PCRE2                                   \
-           USE_PCRE USE_PCRE_JIT USE_PCRE2 USE_PCRE2_JIT USE_QUIC_OPENSSL_COMPAT
+           USE_PCRE USE_PCRE_JIT USE_PCRE2 USE_PCRE2_JIT USE_QUIC_OPENSSL_COMPAT \
+           USE_OPENSSL_LIGHTER
 
 # preset all variables for all supported build options among use_opts
 $(reset_opts_vars)

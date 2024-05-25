@@ -526,7 +526,7 @@ struct ssl_provider_list {
 };
 #endif
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 static int ssl_dh_ptr_index = -1;
 static HASSL_DH *global_dh = NULL;
 static HASSL_DH *local_dh_1024 = NULL;
@@ -2009,7 +2009,9 @@ struct methodVersions methodVersions[] = {
 static void ssl_sock_switchctx_set(SSL *ssl, SSL_CTX *ctx)
 {
 	SSL_set_verify(ssl, SSL_CTX_get_verify_mode(ctx), ssl_sock_bind_verifycbk);
+#ifdef HAVE_SSL_CA
 	SSL_set_client_CA_list(ssl, SSL_dup_CA_list(SSL_CTX_get_client_CA_list(ctx)));
+#endif
 	SSL_set_SSL_CTX(ssl, ctx);
 }
 
@@ -2647,7 +2649,7 @@ allow_early:
 }
 #endif
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 
 static inline HASSL_DH *ssl_new_dh_fromdata(BIGNUM *p, BIGNUM *g)
 {
@@ -2918,6 +2920,7 @@ static HASSL_DH *ssl_get_tmp_dh(EVP_PKEY *pkey)
 	return dh;
 }
 
+#ifdef HAVE_DH
 #if (HA_OPENSSL_VERSION_NUMBER < 0x3000000fL)
 /* Returns Diffie-Hellman parameters matching the private key length
    but not exceeding global_ssl.default_dh_param */
@@ -3024,6 +3027,7 @@ int ssl_sock_load_global_dh_param_from_file(const char *filename)
 
 	return -1;
 }
+#endif
 #endif
 
 /* This function allocates a sni_ctx and adds it to the ckch_inst */
@@ -3142,7 +3146,7 @@ struct eb_root crtlists_tree = EB_ROOT_UNIQUE;
  * The value 0 means there is no error nor warning and
  * the operation succeed.
  */
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 static int ssl_sock_load_dh_params(SSL_CTX *ctx, const struct ckch_data *data,
                                    const char *path, char **err)
 {
@@ -3340,7 +3344,7 @@ static int ssl_sock_put_ckch_into_ctx(const char *path, struct ckch_store *store
 	if (errcode & ERR_CODE)
 		goto end;
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 	/* store a NULL pointer to indicate we have not yet loaded
 	   a custom DH param file */
 	if (ssl_dh_ptr_index >= 0) {
@@ -4107,7 +4111,7 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
 	return cfgerr;
 }
 
-
+#ifdef HAVE_SSL_SESSION_CACHE
 static inline void sh_ssl_sess_free_blocks(struct shared_block *first, void *data)
 {
 	struct sh_ssl_sess_hdr *sh_ssl_sess = (struct sh_ssl_sess_hdr *)first->data;
@@ -4427,6 +4431,8 @@ void ssl_set_shctx(SSL_CTX *ctx)
 	SSL_CTX_sess_set_remove_cb(ctx, sh_ssl_sess_remove_cb);
 }
 
+#endif /* HAVE_SSL_SESSION_CACHE */
+
 /*
  * https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/Key_Log_Format
  *
@@ -4595,7 +4601,9 @@ static int ssl_sock_prepare_ctx(struct bind_conf *bind_conf, struct ssl_bind_con
 			}
 			if (ca_file && !((ssl_conf && ssl_conf->no_ca_names) || bind_conf->ssl_conf.no_ca_names)) {
 				/* set CA names for client cert request, function returns void */
+#ifdef HAVE_SSL_CA
 				SSL_CTX_set_client_CA_list(ctx, SSL_dup_CA_list(ssl_get_client_ca_file(ca_file)));
+#endif
 			}
 #ifdef USE_OPENSSL_WOLFSSL
 			/* WolfSSL activates CRL checks by default so we need to disable it */
@@ -4632,7 +4640,9 @@ static int ssl_sock_prepare_ctx(struct bind_conf *bind_conf, struct ssl_bind_con
 	}
 #endif
 
+#ifdef HAVE_SSL_SESSION_CACHE
 	ssl_set_shctx(ctx);
+#endif
 	conf_ciphers = (ssl_conf && ssl_conf->ciphers) ? ssl_conf->ciphers : bind_conf->ssl_conf.ciphers;
 	if (conf_ciphers &&
 	    !SSL_CTX_set_cipher_list(ctx, conf_ciphers)) {
@@ -4651,7 +4661,7 @@ static int ssl_sock_prepare_ctx(struct bind_conf *bind_conf, struct ssl_bind_con
 	}
 #endif
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 	if (!local_dh_1024)
 		local_dh_1024 = ssl_get_dh_1024();
 	if (!local_dh_2048)
@@ -5134,8 +5144,10 @@ static int ssl_sock_prepare_srv_ssl_ctx(const struct server *srv, SSL_CTX *ctx)
 #endif
 	}
 
+#ifdef HAVE_SSL_SESSION_CACHE
 	SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
 	SSL_CTX_sess_set_new_cb(ctx, ssl_sess_new_srv_cb);
+#endif
 	if (srv->ssl_ctx.ciphers &&
 		!SSL_CTX_set_cipher_list(ctx, srv->ssl_ctx.ciphers)) {
 		ha_alert("unable to set SSL cipher list to '%s'.\n",
@@ -5358,11 +5370,13 @@ int ssl_sock_prepare_bind_conf(struct bind_conf *bind_conf)
 				ha_alert("Unable to allocate SSL session cache.\n");
 			return -1;
 		}
+#ifdef HAVE_SSL_SESSION_CACHE
 		/* free block callback */
 		ssl_shctx->free_block = sh_ssl_sess_free_blocks;
 		/* init the root tree within the extra space */
 		sh_ssl_sess_tree = (void *)ssl_shctx + sizeof(struct shared_context);
 		*sh_ssl_sess_tree = EB_ROOT_UNIQUE;
+#endif
 	}
 	err = 0;
 	/* initialize all certificate contexts */
@@ -5846,6 +5860,7 @@ static int ssl_sock_handshake(struct connection *conn, unsigned int flag)
 	 * the reneg handshake.
 	 * Here we use SSL_peek as a workaround for reneg.
 	 */
+#ifdef HAVE_SSL_RENEG
 	if (!(conn->flags & CO_FL_WAIT_L6_CONN) && SSL_renegotiate_pending(ctx->ssl)) {
 		char c;
 
@@ -5938,6 +5953,7 @@ static int ssl_sock_handshake(struct connection *conn, unsigned int flag)
 		/* read some data: consider handshake completed */
 		goto reneg_ok;
 	}
+#endif /* HAVE_SSL_RENEG */
 	ret = SSL_do_handshake(ctx->ssl);
 check_error:
 	if (ret != 1) {
@@ -6419,6 +6435,7 @@ static size_t ssl_sock_to_buf(struct connection *conn, void *xprt_ctx, struct bu
 				break;
 			}
 			else if (ret == SSL_ERROR_WANT_READ) {
+#ifdef HAVE_SSL_RENEG
 				if (SSL_renegotiate_pending(ctx->ssl)) {
 					ctx->xprt->subscribe(conn, ctx->xprt_ctx,
 					                     SUB_RETRY_RECV,
@@ -6432,6 +6449,7 @@ static size_t ssl_sock_to_buf(struct connection *conn, void *xprt_ctx, struct bu
 #endif
 					break;
 				}
+#endif /* HAVE_SSL_RENEG */
 				break;
 			} else if (ret == SSL_ERROR_ZERO_RETURN)
 				goto read0;
@@ -6583,6 +6601,7 @@ static size_t ssl_sock_from_buf(struct connection *conn, void *xprt_ctx, const s
 			ret = SSL_get_error(ctx->ssl, ret);
 
 			if (ret == SSL_ERROR_WANT_WRITE) {
+#ifdef HAVE_SSL_RENEG
 				if (SSL_renegotiate_pending(ctx->ssl)) {
 					/* handshake is running, and it may need to re-enable write */
 					conn->flags |= CO_FL_SSL_WAIT_HS;
@@ -6594,6 +6613,7 @@ static size_t ssl_sock_from_buf(struct connection *conn, void *xprt_ctx, const s
 #endif
 					break;
 				}
+#endif /* HAVE_SSL_RENEG */
 
 				break;
 			}
@@ -7581,7 +7601,7 @@ static void __ssl_sock_init(void)
 
 	hap_register_post_deinit(ssl_free_global_issuers);
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 	ssl_dh_ptr_index = SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, NULL);
 	hap_register_post_deinit(ssl_free_dh);
 #endif
@@ -7710,7 +7730,7 @@ void ssl_unload_providers(void) {
 }
 #endif
 
-#ifndef OPENSSL_NO_DH
+#ifdef HAVE_DH
 void ssl_free_dh(void) {
 	if (local_dh_1024) {
 		HASSL_DH_free(local_dh_1024);
