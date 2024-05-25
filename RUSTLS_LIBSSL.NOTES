@@ -1,0 +1,176 @@
+# NOTES about rustls-libssl porting
+
+## Building w/ USE_OPENSSL=1
+
+Missing Symbols:
+
+$ ldd -r haproxy
+	linux-vdso.so.1 (0x00007ffdfbd86000)
+	libcrypt.so.1 => /lib/x86_64-linux-gnu/libcrypt.so.1 (0x00007910c26fc000)
+	libssl.so.3 => /opt/rustls-libssl-0.2.0/lib/libssl.so.3 (0x00007910c1600000)
+	libcrypto.so.3 => /lib/x86_64-linux-gnu/libcrypto.so.3 (0x00007910c1000000)
+	liblua5.4.so.0 => /lib/x86_64-linux-gnu/liblua5.4.so.0 (0x00007910c26bb000)
+	libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x00007910c269f000)
+	libpcre.so.3 => /lib/x86_64-linux-gnu/libpcre.so.3 (0x00007910c2625000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007910c0c00000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007910c25f8000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007910c2762000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007910c1517000)
+undefined symbol: SSL_renegotiate_pending, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_client_hello_get0_ext, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_CTX_set_tlsext_ticket_key_evp_cb, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_CTX_set_client_hello_cb, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_get_all_async_fds, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_CIPHER_get_auth_nid, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_CTX_set0_tmp_dh_pkey, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_set_max_early_data, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_waiting_for_async, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_get_client_random, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_client_hello_get0_ciphers, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_CTX_add_server_custom_ext, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_peek, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_get_finished, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_SESSION_get_max_early_data, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_set_client_CA_list, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_SESSION_get_master_key, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_get_early_data_status, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_CTX_set_security_level, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_SESSION_set1_id, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_get_peer_finished, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_get_server_random, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_get_changed_async_fds, version OPENSSL_3.0.0	(./haproxy)
+undefined symbol: SSL_dup_CA_list, version OPENSSL_3.0.0	(./haproxy)
+
+## Building with USE_OPENSSL_LIGHTER
+
+To achieve something with the right symbols, build with USE_OPENSSL_LIGHTER=1.
+
+$ ldd -r haproxy
+	linux-vdso.so.1 (0x00007ffe459fd000)
+	libcrypt.so.1 => /lib/x86_64-linux-gnu/libcrypt.so.1 (0x00007e1bbcb9c000)
+	libssl.so.3 => /opt/rustls-libssl-0.2.0/lib/libssl.so.3 (0x00007e1bbc200000)
+	libcrypto.so.3 => /lib/x86_64-linux-gnu/libcrypto.so.3 (0x00007e1bbbc00000)
+	liblua5.4.so.0 => /lib/x86_64-linux-gnu/liblua5.4.so.0 (0x00007e1bbc1bf000)
+	libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x00007e1bbd1ae000)
+	libpcre.so.3 => /lib/x86_64-linux-gnu/libpcre.so.3 (0x00007e1bbc147000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007e1bbb800000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007e1bbcb6f000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007e1bbd1cc000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007e1bbbb17000)
+
+## First tests
+
+This is obviously not working correctly and has some timing issues, but I can
+get an SSL response from time to time if haproxy is started from an strace,
+which is a good start :-)
+
+
+This is the first SSL response generated with rustls-libssl + haproxy:
+
+$ openssl s_client -connect localhost:8443
+CONNECTED(00000003)
+Can't use SSL_get_servername
+depth=0 CN = foo.bar
+verify error:num=18:self-signed certificate
+verify return:1
+depth=0 CN = foo.bar
+verify error:num=10:certificate has expired
+notAfter=Feb  1 21:45:26 2021 GMT
+verify return:1
+depth=0 CN = foo.bar
+notAfter=Feb  1 21:45:26 2021 GMT
+verify return:1
+---
+Certificate chain
+ 0 s:CN = foo.bar
+   i:CN = foo.bar
+   a:PKEY: rsaEncryption, 2048 (bit); sigalg: RSA-SHA256
+   v:NotBefore: Feb  2 21:45:26 2020 GMT; NotAfter: Feb  1 21:45:26 2021 GMT
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIDBTCCAe2gAwIBAgIUVV+dwlyPASt5mklVWtA7fdKxLfwwDQYJKoZIhvcNAQEL
+BQAwEjEQMA4GA1UEAwwHZm9vLmJhcjAeFw0yMDAyMDIyMTQ1MjZaFw0yMTAyMDEy
+MTQ1MjZaMBIxEDAOBgNVBAMMB2Zvby5iYXIwggEiMA0GCSqGSIb3DQEBAQUAA4IB
+DwAwggEKAoIBAQCaF4i9DPzQS9BxX00LfE+SjOBqXmKqUtCP/USA4d6Vecs3j/X7
+ThlCqZxGei7lhaETJAxwxBgJyx5uA3i1wzq56lOjQDpxMoQ+oZwQGMyuiBQ/fex5
+6/DObl2h+mupMZIXujp2A2sEXyndcoRSDSYap3UWPKBmru1jH2sPbhmegPtQG+LS
+zJxqpkQ9HMA8qJt6d3uUHYul0D01rAwEybyi4bInC9Clq5DnyhPi5P0D0Q26ZjtP
+pTirrT1A80ZUR8MKZxez/Xb5cjNePdoY/nih1dxeaCaKg00P55o4kpkgODb2zy3v
+1ENzChgLtfeD9vM02+MHDoLVfRogyuHCozz/AgMBAAGjUzBRMB0GA1UdDgQWBBSd
+/b74uOs1ahTIp8emTpxwUcxqZjAfBgNVHSMEGDAWgBSd/b74uOs1ahTIp8emTpxw
+UcxqZjAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAtMGPoO/ZX
+hIbcxywSPttWDTRShW5CzpLYAzHgyshkyGW558UQWxMmK2hs1CEc73EoIiDkoV2M
+ax+8pSASi2igAiLeNaOPM3ramjNked5Bf7VuEohovVypb8u/FcIqG2ThCwNUcMTa
+TOkRUrkveX2H0oDf1I24wSnmY7TttYqUMd1YAKgMDDNRcEsCNvIZbYNXNX4NpR7F
++2TZt4CtOQ+C+abkTIKzpEuCfZC+YEm5YccPvxm2o8pwsXUhptx7YfjLfW6Nr6MU
+uy/gNZjU+sJml+83Lipe9GF1Qr3Y4FE1lMFrxl9dwu2DA4NiT9uGtkbRokF33Ra9
+fVNSjVEggOtC
+-----END CERTIFICATE-----
+subject=CN = foo.bar
+issuer=CN = foo.bar
+---
+No client certificate CA names sent
+Peer signing digest: SHA512
+Peer signature type: RSA-PSS
+Server Temp Key: X25519, 253 bits
+---
+SSL handshake has read 1333 bytes and written 373 bytes
+Verification error: certificate has expired
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Server public key is 2048 bit
+Secure Renegotiation IS NOT supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+Early data was not sent
+Verify return code: 10 (certificate has expired)
+---
+---
+Post-Handshake New Session Ticket arrived:
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+    Session-ID: E84D22CBFF5870105CDD49B83DC0220A51DBDE9E7F396EF4FE5113A1B2876723
+    Session-ID-ctx: 
+    Resumption PSK: A3131ACAF5DF7EB551CC042DC52FEE69D27D9798C49848AF4E1CFF0E162C099B7B56D05F55A26E69FB2B0E87B418FDD2
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    TLS session ticket lifetime hint: 86400 (seconds)
+    TLS session ticket:
+    0000 - d2 a4 95 ae f1 d7 5f 1a-56 ba b8 49 db 60 bf 39   ......_.V..I.`.9
+    0010 - ec 0a 0b 4e 0b fb 0f ac-6b 2d c2 1f 32 ff 26 b9   ...N....k-..2.&.
+
+    Start Time: 1716678657
+    Timeout   : 7200 (sec)
+    Verify return code: 10 (certificate has expired)
+    Extended master secret: no
+    Max Early Data: 0
+---
+read R BLOCK
+---
+Post-Handshake New Session Ticket arrived:
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+    Session-ID: 1276EF1E67D4E7E3F240BC01B437C07459981E2008975D430C6161EF161C630A
+    Session-ID-ctx: 
+    Resumption PSK: F3B5E1D400DDF08C76DFE1A7C4C419DC4408AD6F412D7578501E68EE8BD76C289677B22BDABA6CD7864DF81DB9ED298B
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    TLS session ticket lifetime hint: 86400 (seconds)
+    TLS session ticket:
+    0000 - d5 67 56 f7 70 29 74 8b-bb b5 26 fd 30 77 a6 a7   .gV.p)t...&.0w..
+    0010 - b5 0f 79 7e d1 70 79 b5-26 37 8f a1 db 84 36 79   ..y~.py.&7....6y
+
+    Start Time: 1716678657
+    Timeout   : 7200 (sec)
+    Verify return code: 10 (certificate has expired)
+    Extended master secret: no
+    Max Early Data: 0
+---
+read R BLOCK
+
