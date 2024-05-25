@@ -2,7 +2,7 @@
 set -eux
 
 BUILDSSL_DESTDIR=${BUILDSSL_DESTDIR:-${HOME}/opt}
-BUILDSSL_TMPDIR=${BUILDSSL_TMPDIR:-/tmp/download-cache}
+BUILDSSL_TMPDIR=${BUILDSSL_TMPDIR:-"/tmp/download-cache"}
 
 download_openssl () {
     if [ ! -f "${BUILDSSL_TMPDIR}/openssl-${OPENSSL_VERSION}.tar.gz" ]; then
