@@ -192,6 +192,33 @@ build_wolfssl () {
     fi
 }
 
+download_rustls_libssl () {
+    if [ ! -f "${BUILDSSL_TMPDIR}/rustls-libssl-${RUSTLSLIBSSL_VERSION}.tar.gz" ]; then
+      mkdir -p ${BUILDSSL_TMPDIR}
+      if [ "${RUSTLSLIBSSL_VERSION%%-*}" != "git" ]; then
+        wget -q -O "${BUILDSSL_TMPDIR}/rustls-libssl-${RUSTLSLIBSSL_VERSION}.tar.gz" \
+             "https://github.com/rustls/rustls-openssl-compat/archive/refs/tags/v/${RUSTLSLIBSSL_VERSION}.tar.gz"
+      else
+        wget -q -O "${BUILDSSL_TMPDIR}/rustls-libssl-${RUSTLSLIBSSL_VERSION}.tar.gz" \
+             "https://github.com/rustls/rustls-openssl-compat/archive/${RUSTLSLIBSSL_VERSION##git-}.tar.gz"
+      fi
+    fi
+}
+
+build_rustls_libssl () {
+    if [ "$(cat ${BUILDSSL_DESTDIR}/.rustls-libssl-version)" != "${RUSTLSLIBSSL_VERSION}" ]; then
+        mkdir -p "${BUILDSSL_TMPDIR}/rustls-libssl-${RUSTLSLIBSSL_VERSION}/"
+        tar zxf "${BUILDSSL_TMPDIR}/rustls-libssl-${RUSTLSLIBSSL_VERSION}.tar.gz" -C "${BUILDSSL_TMPDIR}/rustls-libssl-${RUSTLSLIBSSL_VERSION}/" --strip-components=2
+        (
+           cd "${BUILDSSL_TMPDIR}/rustls-libssl-${RUSTLSLIBSSL_VERSION}/"
+           make
+          mkdir -p "${BUILDSSL_DESTDIR}/lib/"
+          cp target/debug/libssl.so.3 "${BUILDSSL_DESTDIR}/lib/"
+        )
+        echo "${RUSTLSLIBSSL_VERSION}" > "${BUILDSSL_DESTDIR}/.rustls-libssl-version"
+    fi
+}
+
 mkdir -p "${BUILDSSL_DESTDIR}"
 
 
@@ -223,4 +250,9 @@ fi
 if [ ! -z ${WOLFSSL_VERSION+x} ]; then
 	download_wolfssl
 	build_wolfssl
+fi
+
+if [ ! -z ${RUSTLSLIBSSL_VERSION} ]; then
+       download_rustls_libssl
+       build_rustls_libssl
 fi
