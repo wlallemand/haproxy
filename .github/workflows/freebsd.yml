@@ -1,0 +1,25 @@
+name: FreeBSD
+
+on:
+  schedule:
+    - cron: "0 0 25 * *"
+  workflow_dispatch:
+
+jobs:
+  gcc:
+    runs-on: ubuntu-latest
+#    if: ${{ github.repository_owner == 'haproxy' }}
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Build on VM"
+        uses: vmactions/freebsd-vm@v1
+        with:
+          sync: sshfs
+          prepare: |
+            /usr/sbin/pkg update -f && /usr/sbin/pkg upgrade -y && /usr/sbin/pkg install -y openssl git gmake lua54 socat pcre2
+          run: |
+            gmake CC=clang V=1 ERR=1 TARGET=freebsd USE_ZLIB=1 USE_PCRE2=1 USE_PCRE2_JIT=1 USE_OPENSSL=1 USE_LUA=1 LUA_INC=/usr/local/include/lua54 LUA_LIB=/usr/local/lib LUA_LIB_NAME=lua-5.4
