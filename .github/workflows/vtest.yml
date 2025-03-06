@@ -163,13 +163,12 @@ jobs:
     - name: Show Unit-Tests results
       if: ${{ failure() && steps.unittests.outcome == 'failure' }}
       run: |
-        for result in ${TMPDIR:-/tmp}/ha-unittests-*/res.*; do
+        for result in ${TMPDIR:-/tmp}/ha-unittests-*/results/res.*; do
           echo "::group::"
           cat $result
           echo "::endgroup::"
         done
         exit 1
-
     - name: Show coredumps
       if: ${{ failure() && steps.vtest.outcome == 'failure' }}
       run: |
