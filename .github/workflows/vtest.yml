@@ -164,7 +164,7 @@ jobs:
       if: ${{ failure() && steps.unittests.outcome == 'failure' }}
       run: |
         for result in ${TMPDIR:-/tmp}/ha-unittests-*/results/res.*; do
-          echo "::group::"
+          printf "::group::"
           cat $result
           echo "::endgroup::"
         done
