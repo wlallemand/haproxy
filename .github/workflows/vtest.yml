@@ -163,7 +163,7 @@ jobs:
     - name: Show Unit-Tests results
       if: ${{ failure() && steps.unittests.outcome == 'failure' }}
       run: |
-        for result in ${TMPDIR:-/tmp}/ha-unittests-*/*; do
+        for result in ${TMPDIR:-/tmp}/ha-unittests-*/res.*; do
           echo "::group::"
           cat $result
           echo "::endgroup::"
