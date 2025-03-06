@@ -14,6 +14,8 @@ run() {
 	${HAPROXY_PROGRAM} -U jwk ${TESTDIR}/rsa.key > "${FILE2}"
 	diff -Naurp ${TESTDIR}/rsa.pub.jwk "${FILE2}"
 	rm "${FILE2}"
+
+	exit 1
 }
 
 case "$1" in
