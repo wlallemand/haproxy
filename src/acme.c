@@ -632,7 +632,7 @@ int acme_res_chkorder(struct task *task, struct acme_ctx *ctx, char **errmsg)
 		goto error;
 	}
 	trash.data = ret;
-	if (strncasecmp("ready", trash.area, trash.data) != 0) {
+	if (strncasecmp("valid", trash.area, trash.data) != 0) {
 		memprintf(errmsg, "order status: %.*s", (int)trash.data, trash.area);
 		goto error;
 	};
