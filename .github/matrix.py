@@ -261,6 +261,11 @@ def main(ref_name):
             if ssl == "BORINGSSL=yes" or ssl == "QUICTLS=yes" or "LIBRESSL" in ssl or "WOLFSSL" in ssl or "AWS_LC" in ssl or openssl_supports_quic:
                 flags.append("USE_QUIC=1")
 
+            if openssl_supports_quic:
+                flags.append("USE_OBSOLETE_LINKER=1")
+                flags.append('ARCH_FLAGS="-g -fsanitize=address"')
+                flags.append('OPT_CFLAGS="-O1"')
+
             matrix.append(
                 {
                     "name": "{}, {}, ssl={}".format(os, CC, clean_ssl(ssl)),
