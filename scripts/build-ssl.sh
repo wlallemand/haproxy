@@ -30,7 +30,7 @@ download_openssl () {
 build_openssl_linux () {
     (
         cd "${BUILDSSL_TMPDIR}/openssl-${OPENSSL_VERSION}/"
-        ./config shared --prefix="${BUILDSSL_DESTDIR}" --openssldir="${BUILDSSL_DESTDIR}" --libdir=lib -DPURIFY
+        ./config shared -ggdb3 -O0 -fno-omit-frame-pointer -fno-inline-functions --prefix="${BUILDSSL_DESTDIR}" --openssldir="${BUILDSSL_DESTDIR}" --libdir=lib -DPURIFY
         if [ -z "${OPENSSL_VERSION##1.*}" ]; then
             make all
         else
