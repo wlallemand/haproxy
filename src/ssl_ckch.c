@@ -1332,7 +1332,7 @@ struct cafile_entry *ssl_store_dup_cafile_entry(struct cafile_entry *src)
 {
 	struct cafile_entry *dst = NULL;
 	X509_STORE *store = NULL;
-	STACK_OF(X509_OBJECT) *objs;
+	STACK_OF(X509_OBJECT) *objs = NULL;
 	int i;
 
 	if (!src)
@@ -1344,7 +1344,7 @@ struct cafile_entry *ssl_store_dup_cafile_entry(struct cafile_entry *src)
 		if (!store)
 			goto err;
 
-		objs = X509_STORE_get0_objects(src->ca_store);
+		objs = X509_STORE_get1_objects(src->ca_store);
 		for (i = 0; i < sk_X509_OBJECT_num(objs); i++) {
 			X509 *cert;
 			X509_CRL *crl;
@@ -1372,10 +1372,11 @@ struct cafile_entry *ssl_store_dup_cafile_entry(struct cafile_entry *src)
 		}
 	}
 	dst = ssl_store_create_cafile_entry(src->path, store, src->type);
-
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	return dst;
 
 err:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	X509_STORE_free(store);
 	ha_free(&dst);
 
@@ -1483,13 +1484,13 @@ end:
  */
 int __ssl_store_load_locations_file(char *path, int create_if_none, enum cafile_type type, int shuterror)
 {
+	STACK_OF(X509_OBJECT) *objs = NULL;
 	X509_STORE *store = ssl_store_get0_locations_file(path);
 
 	/* If this function is called by the CLI, we should not call the
 	 * X509_STORE_load_locations function because it performs forbidden disk
 	 * accesses. */
 	if (!store && create_if_none) {
-		STACK_OF(X509_OBJECT) *objs;
 		int cert_count = 0;
 		struct stat buf;
 		struct cafile_entry *ca_e;
@@ -1594,7 +1595,7 @@ scandir_err:
 			}
 		}
 
-		objs = X509_STORE_get0_objects(store);
+		objs = X509_STORE_get1_objects(store);
 		cert_count = sk_X509_OBJECT_num(objs);
 		if (cert_count == 0) {
 			if (!shuterror)
@@ -1608,9 +1609,11 @@ scandir_err:
 		}
 		ebst_insert(&cafile_tree, &ca_e->node);
 	}
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	return (store != NULL);
 
 err:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	X509_STORE_free(store);
 	store = NULL;
 	return 0;
@@ -3783,7 +3786,7 @@ static int cli_io_handler_show_cafile_detail(struct appctx *appctx)
 	struct buffer *out = alloc_trash_chunk();
 	int i = 0;
 	X509 *cert;
-	STACK_OF(X509_OBJECT) *objs;
+	STACK_OF(X509_OBJECT) *objs = NULL;
 	int retval = 0;
 	int ca_index = ctx->ca_index;
 	int show_all = ctx->show_all;
@@ -3809,7 +3812,7 @@ static int cli_io_handler_show_cafile_detail(struct appctx *appctx)
 	if (!cafile_entry->ca_store)
 		goto end;
 
-	objs = X509_STORE_get0_objects(cafile_entry->ca_store);
+	objs = X509_STORE_get1_objects(cafile_entry->ca_store);
 	for (i = ca_index; i < sk_X509_OBJECT_num(objs); i++) {
 
 		cert = X509_OBJECT_get0_X509(sk_X509_OBJECT_value(objs, i));
@@ -3832,13 +3835,16 @@ static int cli_io_handler_show_cafile_detail(struct appctx *appctx)
 	}
 
 end:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	free_trash_chunk(out);
 	return 1; /* end, don't come back */
 
 end_no_putchk:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	free_trash_chunk(out);
 	return 1;
 yield:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	/* save the current state */
 	ctx->ca_index = i;
 	free_trash_chunk(out);
@@ -3941,9 +3947,10 @@ static int get_certificate_count(struct cafile_entry *cafile_entry)
 	STACK_OF(X509_OBJECT) *objs;
 
 	if (cafile_entry && cafile_entry->ca_store) {
-		objs = X509_STORE_get0_objects(cafile_entry->ca_store);
+		objs = X509_STORE_get1_objects(cafile_entry->ca_store);
 		if (objs)
 			cert_count = sk_X509_OBJECT_num(objs);
+		sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	}
 	return cert_count;
 }
@@ -4473,7 +4480,7 @@ static int cli_io_handler_show_crlfile_detail(struct appctx *appctx)
 	struct buffer *out = alloc_trash_chunk();
 	int i;
 	X509_CRL *crl;
-	STACK_OF(X509_OBJECT) *objs;
+	STACK_OF(X509_OBJECT) *objs = NULL;
 	int retval = 0;
 	int index = ctx->index;
 
@@ -4498,7 +4505,7 @@ static int cli_io_handler_show_crlfile_detail(struct appctx *appctx)
 	if (!cafile_entry->ca_store)
 		goto end;
 
-	objs = X509_STORE_get0_objects(cafile_entry->ca_store);
+	objs = X509_STORE_get1_objects(cafile_entry->ca_store);
 	for (i = 0; i < sk_X509_OBJECT_num(objs); i++) {
 		crl = X509_OBJECT_get0_X509_CRL(sk_X509_OBJECT_value(objs, i));
 		if (!crl)
@@ -4517,13 +4524,16 @@ static int cli_io_handler_show_crlfile_detail(struct appctx *appctx)
 	}
 
 end:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	if (applet_putchk(appctx, out) == -1)
 		goto yield;
 
 end_no_putchk:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	free_trash_chunk(out);
 	return 1;
 yield:
+	sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
 	free_trash_chunk(out);
 	return 0; /* should come back */
 }
