@@ -380,6 +380,44 @@ static inline unsigned long ERR_peek_error_func(const char **func)
 
 #endif
 
+#if (HA_OPENSSL_VERSION_NUMBER < 0x30300000L)
+/* Previous OpenSSL versions does not implement X509_STORE_get1_objects()
+ * but X509_STORE_get0_objects were added in OpenSSL 1.1.0.
+ */
+static inline STACK_OF(X509_OBJECT) *X509_STORE_get1_objects(X509_STORE *xs)
+{
+	STACK_OF(X509_OBJECT) *store_objs;
+	STACK_OF(X509_OBJECT) *out_objs;
+	int i;
+
+	if (xs == NULL)
+		return NULL;
+
+	store_objs = X509_STORE_get0_objects(xs);
+	if (store_objs == NULL)
+		return NULL;
+
+	out_objs = sk_X509_OBJECT_new_null();
+	if (out_objs == NULL)
+		return NULL;
+
+	for (i = 0; i < sk_X509_OBJECT_num(store_objs); i++) {
+		X509_OBJECT *obj = sk_X509_OBJECT_value(store_objs, i);
+		if (obj != NULL) {
+			X509_OBJECT_up_ref_count(obj);
+
+			if (!sk_X509_OBJECT_push(out_objs, obj)) {
+				/* In case of failure to push the object, clean up and return NULL */
+				sk_X509_OBJECT_pop_free(out_objs, X509_OBJECT_free);
+				return NULL;
+			}
+		}
+	}
+	return out_objs;
+}
+#endif
+
+
 #if (HA_OPENSSL_VERSION_NUMBER >= 0x1010000fL) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x2070200fL)
 #define __OPENSSL_110_CONST__ const
 #else
