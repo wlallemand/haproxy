@@ -36,6 +36,12 @@ jobs:
       run: |
         make -j3 CC=${{ matrix.platform.cc }} V=1 ERR=1 TARGET=linux-glibc DEBUG="-DDEBUG_POOL_INTEGRITY -DDEBUG_UNIT" USE_PROMEX=1 USE_OPENSSL=1 USE_QUIC=1 USE_ZLIB=1 USE_PCRE2=1 USE_PCRE2_JIT=1 USE_LUA=1 ADDLIB="${{ matrix.platform.ADDLIB_ATOMIC }}" ARCH_FLAGS="${{ matrix.platform.ARCH_FLAGS }}"
         make install
+# TODO: review this workaround later
+    - name: relax crypto policies
+      run: |
+        dnf -y install crypto-policies-scripts
+        echo LEGACY > /etc/crypto-policies/config
+        update-crypto-policies
     - name: Show HAProxy version
       id: show-version
       run: |
@@ -44,13 +50,6 @@ jobs:
         echo "::endgroup::"
         haproxy -vv
         echo "version=$(haproxy -vq)" >> $GITHUB_OUTPUT
-#
-# TODO: review this workaround later
-    - name: relax crypto policies
-      run: |
-        dnf -y install crypto-policies-scripts
-        echo LEGACY > /etc/crypto-policies/config
-        update-crypto-policies
     - name: Run VTest for HAProxy ${{ steps.show-version.outputs.version }}
       id: vtest
       run: |
