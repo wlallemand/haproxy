@@ -1,0 +1,116 @@
+#REGTEST_TYPE=bug
+varnishtest "OpenSSL selects bundle certificates across live updates"
+feature cmd "$HAPROXY_PROGRAM -cc 'feature(OPENSSL) && ssllib_name_startswith(OpenSSL) && openssl_version_atleast(1.1.1)'"
+feature cmd "command -v socat"
+feature ignore_unknown_macro
+
+server s1 -repeat 8 {
+    rxreq
+    txresp
+} -start
+
+haproxy h1 -conf {
+    global
+    .if feature(THREAD)
+        thread-groups 1
+    .endif
+
+    .if !ssllib_name_startswith(AWS-LC)
+        tune.ssl.default-dh-param 2048
+    .endif
+        stats socket "${tmpdir}/h1/stats" level admin
+
+    defaults
+        mode http
+        option httplog
+        retries 0
+        log stderr local0 debug err
+        option logasap
+        timeout connect "${HAPROXY_TEST_TIMEOUT-5s}"
+        timeout client  "${HAPROXY_TEST_TIMEOUT-5s}"
+        timeout server  "${HAPROXY_TEST_TIMEOUT-5s}"
+
+    # Cleartext entry point
+    frontend clear-lst
+        bind "fd@${clearlst}"
+
+        use_backend be_rsa   if { path /rsa }
+        use_backend be_ecdsa if { path /ecdsa }
+
+    backend be_rsa
+        http-response add-header x-ssl-serial  '%[ssl_s_serial,hex]'
+        http-response add-header x-ssl-keyalg  '%[ssl_s_key_alg]'
+        server s1 "${h1_tls_sock}" ssl verify none sni str(example.com) ssl-min-ver TLSv1.2 ssl-max-ver TLSv1.2 ciphers ECDHE-RSA-AES256-GCM-SHA384
+
+    backend be_ecdsa
+        http-response add-header x-ssl-serial  '%[ssl_s_serial,hex]'
+        http-response add-header x-ssl-keyalg  '%[ssl_s_key_alg]'
+        server s1 "${h1_tls_sock}" ssl verify none sni str(example.com) ssl-min-ver TLSv1.2 ssl-max-ver TLSv1.2 ciphers ECDHE-ECDSA-AES256-GCM-SHA384
+
+    # SSL frontend serving the RSA/ECDSA bundle
+    listen ssl-lst
+        mode http
+        bind "fd@${tls}" ssl crt ${testdir}/certs/cert1-example.com.pem
+        http-response add-header x-ssl-crtname '%[ssl_fc_crtname]'
+        server s1 ${s1_addr}:${s1_port}
+} -start
+
+# The TLS 1.2 cipher pins the key type. The fetch must name the certificate
+# actually sent from the shared context.
+client c1 -connect ${h1_clearlst_sock} {
+    txreq -url "/rsa"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.x-ssl-keyalg == "rsaEncryption"
+    expect resp.http.x-ssl-crtname ~ "cert1-example.com.pem.rsa"
+    expect resp.http.x-ssl-serial == "254AA016FDD742E054EC5C433986433BF0D914FA"
+} -run
+
+client c2 -connect ${h1_clearlst_sock} {
+    txreq -url "/ecdsa"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.x-ssl-keyalg == "id-ecPublicKey"
+    expect resp.http.x-ssl-crtname ~ "cert1-example.com.pem.ecdsa"
+    expect resp.http.x-ssl-serial == "5A75206D840138F502D6D73D345A83DA08D505AC"
+} -run
+
+# Updating only RSA must rebuild the pair without changing the ECDSA leaf.
+shell {
+    printf "set ssl cert ${testdir}/certs/cert1-example.com.pem.rsa <<\n$(cat ${testdir}/certs/cert2-example.com.pem.rsa)\n\n" | socat "${tmpdir}/h1/stats" - | grep -q 'Transaction created'
+    echo "commit ssl cert ${testdir}/certs/cert1-example.com.pem.rsa" | socat "${tmpdir}/h1/stats" - | grep -q 'Success!'
+}
+
+client c3 -connect ${h1_clearlst_sock} {
+    txreq -url "/rsa"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.x-ssl-serial == "08C781F6EC3E3DC048A96F1C0C8DB5B3B4B15956"
+} -run
+
+client c4 -connect ${h1_clearlst_sock} {
+    txreq -url "/ecdsa"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.x-ssl-serial == "5A75206D840138F502D6D73D345A83DA08D505AC"
+} -run
+
+# The other member can then be updated independently as well.
+shell {
+    printf "set ssl cert ${testdir}/certs/cert1-example.com.pem.ecdsa <<\n$(cat ${testdir}/certs/cert2-example.com.pem.ecdsa)\n\n" | socat "${tmpdir}/h1/stats" - | grep -q 'Transaction created'
+    echo "commit ssl cert ${testdir}/certs/cert1-example.com.pem.ecdsa" | socat "${tmpdir}/h1/stats" - | grep -q 'Success!'
+}
+
+client c5 -connect ${h1_clearlst_sock} {
+    txreq -url "/rsa"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.x-ssl-serial == "08C781F6EC3E3DC048A96F1C0C8DB5B3B4B15956"
+} -run
+
+client c6 -connect ${h1_clearlst_sock} {
+    txreq -url "/ecdsa"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.x-ssl-serial == "276CE1C948078D7B0FCC036A3796521D7D115476"
+} -run
