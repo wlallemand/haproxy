@@ -2148,7 +2148,6 @@ static int smp_fetch_ssl_fc_crtname(const struct arg *args, struct sample *smp, 
 {
 	struct connection *conn;
 	SSL *ssl;
-	SSL_CTX *ctx;
 
 	smp->flags = SMP_F_VOL_SESS | SMP_F_CONST;
 	smp->data.type = SMP_T_STR;
@@ -2163,11 +2162,7 @@ static int smp_fetch_ssl_fc_crtname(const struct arg *args, struct sample *smp, 
 	if (!ssl)
 		return 0;
 
-	ctx = SSL_get_SSL_CTX(ssl);
-	if (!ctx)
-		return 0;
-
-	smp->data.u.str.area = SSL_CTX_get_ex_data(ctx, ssl_crtname_index);
+	smp->data.u.str.area = (char *)ssl_sock_get_selected_crtname(ssl);
 	if (!smp->data.u.str.area)
 		return 0;
 	smp->data.u.str.data = strlen(smp->data.u.str.area);

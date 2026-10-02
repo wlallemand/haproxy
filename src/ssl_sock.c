@@ -864,9 +864,54 @@ const char *SSL_SOCK_KEYTYPE_NAMES[] = {
 
 static uint64_t ssl_cert_bundle_next_id;
 
+struct ssl_bundle_cert_names {
+	X509 *cert[2];
+	char *name[2];
+};
+
+static int ssl_bundle_cert_names_index = -1;
+
+static void ssl_bundle_cert_names_free(struct ssl_bundle_cert_names *names)
+{
+	int i;
+
+	if (!names)
+		return;
+	for (i = 0; i < 2; i++) {
+		X509_free(names->cert[i]);
+		free(names->name[i]);
+	}
+	free(names);
+}
+
 uint64_t ssl_sock_new_bundle_id(void)
 {
 	return _HA_ATOMIC_ADD_FETCH(&ssl_cert_bundle_next_id, 1);
+}
+
+const char *ssl_sock_get_selected_crtname(SSL *ssl)
+{
+	SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+	struct ssl_bundle_cert_names *names;
+	X509 *cert;
+	int i;
+
+	if (!ctx)
+		return NULL;
+
+	names = ssl_bundle_cert_names_index >= 0 ?
+		SSL_CTX_get_ex_data(ctx, ssl_bundle_cert_names_index) : NULL;
+	if (names) {
+		cert = SSL_get_certificate(ssl);
+		if (cert) {
+			for (i = 0; i < 2; i++) {
+				if (names->cert[i] && X509_cmp(names->cert[i], cert) == 0)
+					return names->name[i];
+			}
+		}
+		return NULL;
+	}
+	return SSL_CTX_get_ex_data(ctx, ssl_crtname_index);
 }
 
 static struct shared_context *ssl_shctx = NULL; /* ssl shared session cache */
@@ -8863,6 +8908,11 @@ static void ssl_sock_free_crtname(void *parent, void *ptr, CRYPTO_EX_DATA *ad, i
 	free(ptr);
 }
 
+static void ssl_sock_free_bundle_cert_names(void *parent, void *ptr, CRYPTO_EX_DATA *ad, int idx, long argl, void *argp)
+{
+	ssl_bundle_cert_names_free(ptr);
+}
+
 #ifdef HAVE_SSL_KEYLOG
 static void ssl_sock_keylog_free_func(void *parent, void *ptr, CRYPTO_EX_DATA *ad, int idx, long argl, void *argp)
 {
@@ -9022,6 +9072,7 @@ static void __ssl_sock_init(void)
 	ssl_client_crt_ref_index = SSL_get_ex_new_index(0, NULL, NULL, NULL, ssl_sock_clt_crt_free_func);
 	ssl_client_sni_index = SSL_get_ex_new_index(0, NULL, NULL, NULL, ssl_sock_clt_sni_free_func);
 	ssl_crtname_index = SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, ssl_sock_free_crtname);
+	ssl_bundle_cert_names_index = SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, ssl_sock_free_bundle_cert_names);
 
 #if defined(USE_ENGINE) && !defined(OPENSSL_NO_ENGINE)
 	ENGINE_load_builtin_engines();
