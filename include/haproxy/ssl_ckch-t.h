@@ -142,6 +142,7 @@ struct ckch_inst {
 	SSL_CTX *ctx; /* pointer to the SSL context used by this instance */
 	uint64_t bundle_id; /* identifies members of one bundle on this bind */
 	struct ckch_inst *bundle_peer; /* other key type from the same bundle */
+	SSL_CTX *bundle_ctx; /* shared context, when both key types can be grouped */
 	unsigned int is_default:2;      /* This instance is used as the default ctx for this bind_conf (1: implicit default, 2: explicit default) */
 	unsigned int is_server_instance:1; /* This instance is used by a backend server */
 	/* space for more flag there */

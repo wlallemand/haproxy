@@ -37,6 +37,9 @@
 extern struct list tlskeys_reference;
 uint64_t ssl_sock_new_bundle_id(void);
 const char *ssl_sock_get_selected_crtname(SSL *ssl);
+int ssl_sock_build_bundle_ctx(struct ckch_inst *rsa, struct ckch_inst *ecdsa,
+			      SSL_CTX **out, char **err);
+void ssl_sock_set_bundle_ctx(struct ckch_inst *inst, SSL_CTX *ctx);
 extern struct eb_root ckchs_tree;
 extern struct eb_root crtlists_tree;
 extern struct eb_root cafile_tree;

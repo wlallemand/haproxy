@@ -5344,6 +5344,126 @@ int ssl_sock_prep_ctx_and_inst(struct bind_conf *bind_conf, struct ssl_bind_conf
 	return errcode;
 }
 
+/* Each instance retains its own context for independent updates. The SNI
+ * entries may instead point to a shared context, with one reference each. */
+void ssl_sock_set_bundle_ctx(struct ckch_inst *inst, SSL_CTX *ctx)
+{
+	struct sni_ctx *sni;
+	SSL_CTX *selected = ctx ? ctx : inst->ctx;
+
+	if (ctx)
+		SSL_CTX_up_ref(ctx);
+	SSL_CTX_free(inst->bundle_ctx);
+	inst->bundle_ctx = ctx;
+
+	list_for_each_entry(sni, &inst->sni_ctx, by_ckch_inst) {
+		SSL_CTX_up_ref(selected);
+		SSL_CTX_free(sni->ctx);
+		sni->ctx = selected;
+	}
+}
+
+static int ssl_sock_add_bundle_cert(SSL_CTX *ctx, struct ckch_inst *inst, char **err)
+{
+	struct ckch_store *store = inst->ckch_store;
+	STACK_OF(X509) *chain = NULL;
+	int errcode;
+
+	errcode = ssl_sock_load_cert_chain(store->path, store->data, ctx, &chain, err);
+	if (errcode & ERR_CODE)
+		goto out;
+	if (SSL_CTX_use_PrivateKey(ctx, store->data->key) <= 0 ||
+	    SSL_CTX_check_private_key(ctx) <= 0) {
+		memprintf(err, "%sUnable to load private key for bundle certificate '%s'.\n",
+		          err && *err ? *err : "", store->path);
+		errcode |= ERR_ALERT | ERR_FATAL;
+		goto out;
+	}
+#ifdef HAVE_SSL_OCSP
+	if (ssl_sock_load_ocsp(store->path, ctx, store, chain) < 0)
+		errcode |= ERR_WARN;
+#endif
+out:
+	sk_X509_pop_free(chain, X509_free);
+	return errcode;
+}
+
+/* Build a context holding one RSA and one ECDSA keypair. A certificate with
+ * per-certificate SCT or DH data still uses the separate-context path until
+ * those extensions can be dispatched by the selected certificate. */
+int ssl_sock_build_bundle_ctx(struct ckch_inst *rsa, struct ckch_inst *ecdsa,
+			      SSL_CTX **out, char **err)
+{
+	SSL_CTX *ctx = NULL;
+	struct ssl_bundle_cert_names *names = NULL;
+	struct ckch_inst *members[2] = { rsa, ecdsa };
+	char *crtname = NULL;
+	int errcode = 0;
+	int i;
+
+	*out = NULL;
+	if (!rsa || !ecdsa || !rsa->bundle_id || rsa->bundle_id != ecdsa->bundle_id ||
+	    rsa->bind_conf != ecdsa->bind_conf ||
+	    ssl_sock_bundle_key_type(rsa) != EVP_PKEY_RSA ||
+	    ssl_sock_bundle_key_type(ecdsa) != EVP_PKEY_EC ||
+	    !ssl_sock_bundle_same_sni(rsa, ecdsa))
+		return 0;
+	for (i = 0; i < 2; i++) {
+		if (members[i]->ckch_store->data->dh || members[i]->ckch_store->data->sctl)
+			return 0;
+	}
+
+	ctx = SSL_CTX_new(SSLv23_server_method());
+	if (!ctx)
+		goto fail;
+	if (global_ssl.security_level > -1)
+		SSL_CTX_set_security_level(ctx, global_ssl.security_level);
+
+	for (i = 0; i < 2; i++) {
+		errcode |= ssl_sock_add_bundle_cert(ctx, members[i], err);
+		if (errcode & ERR_CODE)
+			goto fail;
+	}
+
+	crtname = strdup(rsa->ckch_store->path);
+	names = calloc(1, sizeof(*names));
+	if (!crtname || !names)
+		goto fail;
+	for (i = 0; i < 2; i++) {
+		names->cert[i] = members[i]->ckch_store->data->cert;
+		if (!X509_up_ref(names->cert[i])) {
+			names->cert[i] = NULL;
+			goto fail;
+		}
+		names->name[i] = strdup(members[i]->ckch_store->path);
+		if (!names->name[i])
+			goto fail;
+	}
+	if (!SSL_CTX_set_ex_data(ctx, ssl_crtname_index, crtname))
+		goto fail;
+	crtname = NULL;
+	if (!SSL_CTX_set_ex_data(ctx, ssl_bundle_cert_names_index, names))
+		goto fail;
+	names = NULL;
+
+	errcode |= ssl_sock_prepare_ctx(rsa->bind_conf, rsa->ssl_conf, ctx, rsa, err);
+	if (errcode & ERR_CODE)
+		goto fail;
+	*out = ctx;
+	return errcode;
+
+fail:
+	if (!(errcode & ERR_CODE)) {
+		memprintf(err, "%sUnable to build shared SSL context for bundle '%s'.\n",
+		          err && *err ? *err : "", rsa->ckch_store->path);
+		errcode |= ERR_ALERT | ERR_FATAL;
+	}
+	free(crtname);
+	ssl_bundle_cert_names_free(names);
+	SSL_CTX_free(ctx);
+	return errcode;
+}
+
 static int ssl_sock_srv_hostcheck(const char *pattern, const char *hostname)
 {
 	const char *pattern_wildcard, *pattern_left_label_end, *hostname_left_label_end;

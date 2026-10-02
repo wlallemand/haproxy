@@ -1257,6 +1257,7 @@ void ckch_inst_free(struct ckch_inst *inst)
 		free(sni);
 	}
 	SSL_CTX_free(inst->ctx);
+	SSL_CTX_free(inst->bundle_ctx);
 	inst->ctx = NULL;
 	LIST_DELETE(&inst->by_ckchs);
 	LIST_DELETE(&inst->by_crtlist_entry);
