@@ -1247,8 +1247,10 @@ void ckch_inst_free(struct ckch_inst *inst)
 
 	if (inst == NULL)
 		return;
-	if (inst->bundle_peer && inst->bundle_peer->bundle_peer == inst)
+	if (inst->bundle_peer && inst->bundle_peer->bundle_peer == inst) {
 		inst->bundle_peer->bundle_peer = NULL;
+		ssl_sock_set_bundle_ctx(inst->bundle_peer, NULL);
+	}
 
 	list_for_each_entry_safe(sni, sni_s, &inst->sni_ctx, by_ckch_inst) {
 		SSL_CTX_free(sni->ctx);
@@ -2959,6 +2961,25 @@ int ckch_inst_rebuild(struct ckch_store *ckch_store, struct ckch_inst *ckchi,
 				return 1;
 		}
 	}
+	if ((*new_inst)->bundle_peer) {
+		struct ckch_inst *rsa, *ecdsa;
+		SSL_CTX *bundle_ctx = NULL;
+		EVP_PKEY *key = X509_get_pubkey(ckch_store->data->cert);
+		int key_type = key ? EVP_PKEY_base_id(key) : EVP_PKEY_NONE;
+
+		EVP_PKEY_free(key);
+		rsa = key_type == EVP_PKEY_RSA ? *new_inst : (*new_inst)->bundle_peer;
+		ecdsa = key_type == EVP_PKEY_EC ? *new_inst : (*new_inst)->bundle_peer;
+		if (key_type == EVP_PKEY_RSA || key_type == EVP_PKEY_EC) {
+			errcode |= ssl_sock_build_bundle_ctx(rsa, ecdsa, &bundle_ctx, err);
+			if (errcode & ERR_CODE)
+				return 1;
+		}
+		if (bundle_ctx) {
+			ssl_sock_set_bundle_ctx(*new_inst, bundle_ctx);
+			SSL_CTX_free(bundle_ctx);
+		}
+	}
 
 	return 0;
 }
@@ -2989,8 +3010,10 @@ static void __ssl_sock_load_new_ckch_instance(struct ckch_inst *ckchi)
 	} else {
 		HA_RWLOCK_WRLOCK(SNI_LOCK, &ckchi->bind_conf->sni_lock);
 		if (ckchi->bundle_peer && ckchi->bundle_peer->bundle_peer &&
-		    ckchi->bundle_peer->bundle_peer != ckchi)
+		    ckchi->bundle_peer->bundle_peer != ckchi) {
 			ckchi->bundle_peer->bundle_peer = ckchi;
+			ssl_sock_set_bundle_ctx(ckchi->bundle_peer, ckchi->bundle_ctx);
+		}
 		ssl_sock_load_cert_sni(ckchi, ckchi->bind_conf);
 		HA_RWLOCK_WRUNLOCK(SNI_LOCK, &ckchi->bind_conf->sni_lock);
 	}

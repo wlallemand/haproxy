@@ -104,6 +104,14 @@ struct sni_ctx *ssl_sock_choose_sni_ctx(struct bind_conf *s, struct connection *
 			}
 		}
 	}
+	/* Both key types are in one context. OpenSSL will select the certificate
+	 * after the ClientHello callback has finished. */
+	if (node_rsa && node_ecdsa &&
+	    container_of(node_rsa, struct sni_ctx, name)->ctx ==
+	    container_of(node_ecdsa, struct sni_ctx, name)->ctx) {
+		node = node_rsa;
+		goto done;
+	}
 	/* Once the certificates are found, select them depending on what is
 	 * supported in the client and by key_signature priority order: EDSA >
 	 * RSA > DSA */
@@ -124,6 +132,7 @@ struct sni_ctx *ssl_sock_choose_sni_ctx(struct bind_conf *s, struct connection *
 		TRACE_STATE("RSA node picked (fallback)", SSL_EV_CONN_CHOOSE_SNI_CTX, conn, servername, node);
 	}
 
+done:
 	if (node) {
 		TRACE_LEAVE(SSL_EV_CONN_CHOOSE_SNI_CTX, conn);
 		return container_of(node, struct sni_ctx, name);

@@ -3018,7 +3018,8 @@ void ssl_sock_load_cert_sni(struct ckch_inst *ckch_inst, struct bind_conf *bind_
 
 		for (; node; node = ebmb_next_dup(node)) {
 			sc1 = ebmb_entry(node, struct sni_ctx, name);
-			if (sc1->ctx == sc0->ctx && sc1->conf == sc0->conf
+			if (sc1->ctx == sc0->ctx && sc1->ckch_inst != sc0->ckch_inst->bundle_peer &&
+			    sc1->conf == sc0->conf
 			    && sc1->neg == sc0->neg && sc1->wild == sc0->wild) {
 				/* it's a duplicate, we should remove and free it */
 				LIST_DELETE(&sc0->by_ckch_inst);
@@ -6023,6 +6024,7 @@ int ssl_sock_prepare_all_ctx(struct bind_conf *bind_conf)
 {
 	struct ebmb_node *node;
 	struct sni_ctx *sni;
+	int i;
 	int err = 0;
 	int errcode = 0;
 	char *errmsg = NULL;
@@ -6057,6 +6059,30 @@ int ssl_sock_prepare_all_ctx(struct bind_conf *bind_conf)
 			errcode |= ssl_sock_prep_ctx_and_inst(bind_conf, sni->conf, sni->ctx, sni->ckch_inst, &errmsg);
 		}
 		node = ebmb_next(node);
+	}
+
+	/* The individual contexts are ready. Bundle pairs can now be represented
+	 * by a context containing both keys, so OpenSSL chooses the certificate
+	 * during the handshake. Retain the individual contexts for live updates. */
+	for (i = 0; i < 2; i++) {
+		node = ebmb_first(i ? &bind_conf->sni_w_ctx : &bind_conf->sni_ctx);
+		while (node) {
+			SSL_CTX *bundle_ctx = NULL;
+			struct ckch_inst *inst;
+
+			sni = ebmb_entry(node, struct sni_ctx, name);
+			inst = sni->ckch_inst;
+			if (inst->bundle_peer && !inst->bundle_ctx &&
+			    ssl_sock_bundle_key_type(inst) == EVP_PKEY_RSA) {
+				errcode |= ssl_sock_build_bundle_ctx(inst, inst->bundle_peer, &bundle_ctx, &errmsg);
+				if (bundle_ctx) {
+					ssl_sock_set_bundle_ctx(inst, bundle_ctx);
+					ssl_sock_set_bundle_ctx(inst->bundle_peer, bundle_ctx);
+					SSL_CTX_free(bundle_ctx);
+				}
+			}
+			node = ebmb_next(node);
+		}
 	}
 
 	if (errcode & ERR_WARN) {
