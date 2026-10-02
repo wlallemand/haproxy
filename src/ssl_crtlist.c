@@ -262,6 +262,7 @@ struct crtlist_entry *crtlist_entry_dup(struct crtlist_entry *src)
 			goto error;
 	}
 	entry->fcount = src->fcount;
+	entry->bundle_id = src->bundle_id;
 	if (src->ssl_conf) {
 		entry->ssl_conf = crtlist_dup_ssl_conf(src->ssl_conf);
 		if (!entry->ssl_conf)
@@ -561,6 +562,8 @@ int crtlist_load_crt(char *crt_path, struct ckch_conf *cc, struct crtlist *newli
 			char fp[MAXPATHLEN+1] = {0};
 			int n = 0;
 			struct crtlist_entry *entry_dup = entry; /* use the previous created entry */
+
+			entry->bundle_id = ssl_sock_new_bundle_id();
 
 			for (n = 0; n < SSL_SOCK_NUM_KEYTYPES; n++) {
 				int ret;

@@ -35,6 +35,7 @@
 #include <haproxy/thread.h>
 
 extern struct list tlskeys_reference;
+uint64_t ssl_sock_new_bundle_id(void);
 extern struct eb_root ckchs_tree;
 extern struct eb_root crtlists_tree;
 extern struct eb_root cafile_tree;

@@ -49,6 +49,7 @@ struct crtlist {
 /* a file in a directory or a line in a crt-list */
 struct crtlist_entry {
 	struct ssl_bind_conf *ssl_conf; /* SSL conf in crt-list */
+	uint64_t bundle_id; /* shared by entries expanded from one multi-cert bundle */
 	unsigned int linenum;
 	unsigned int fcount; /* filters count */
 	char **filters;

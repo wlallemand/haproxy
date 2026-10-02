@@ -2932,6 +2932,7 @@ int ckch_inst_rebuild(struct ckch_store *ckch_store, struct ckch_inst *ckchi,
 
 	/* if the previous ckchi was used as the default */
 	(*new_inst)->is_default = ckchi->is_default;
+	(*new_inst)->bundle_id = ckchi->bundle_id;
 
 	(*new_inst)->is_server_instance = ckchi->is_server_instance;
 	(*new_inst)->server = ckchi->server;

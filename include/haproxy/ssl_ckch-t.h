@@ -140,6 +140,7 @@ struct ckch_inst {
 	struct crtlist_entry *crtlist_entry; /* pointer to the crtlist_entry used, or NULL */
 	struct server *server; /* pointer to the server if is_server_instance is set, NULL otherwise */
 	SSL_CTX *ctx; /* pointer to the SSL context used by this instance */
+	uint64_t bundle_id; /* identifies members of one bundle on this bind */
 	unsigned int is_default:2;      /* This instance is used as the default ctx for this bind_conf (1: implicit default, 2: explicit default) */
 	unsigned int is_server_instance:1; /* This instance is used by a backend server */
 	/* space for more flag there */

@@ -862,6 +862,13 @@ const char *SSL_SOCK_KEYTYPE_NAMES[] = {
 	"rsa"
 };
 
+static uint64_t ssl_cert_bundle_next_id;
+
+uint64_t ssl_sock_new_bundle_id(void)
+{
+	return _HA_ATOMIC_ADD_FETCH(&ssl_cert_bundle_next_id, 1);
+}
+
 static struct shared_context *ssl_shctx = NULL; /* ssl shared session cache */
 static struct eb_root *sh_ssl_sess_tree; /* ssl shared session tree */
 
@@ -3687,6 +3694,7 @@ int ssl_sock_load_cert_list_file(char *file, int dir, struct bind_conf *bind_con
 			memprintf(err, "error processing line %d in file '%s' : %s", entry->linenum, file, *err);
 			goto error;
 		}
+		ckch_inst->bundle_id = entry->bundle_id;
 		LIST_APPEND(&entry->ckch_inst, &ckch_inst->by_crtlist_entry);
 		ckch_inst->crtlist_entry = entry;
 	}
@@ -3766,6 +3774,7 @@ int ssl_sock_load_cert(char *path, struct bind_conf *bind_conf, int is_default, 
 		if (global_ssl.extra_files & SSL_GF_BUNDLE) {
 			char fp[MAXPATHLEN+1] = {0};
 			int n = 0;
+			uint64_t bundle_id = ssl_sock_new_bundle_id();
 
 			/* Load all possible certs and keys in separate ckch_store */
 			for (n = 0; n < SSL_SOCK_NUM_KEYTYPES; n++) {
@@ -3778,6 +3787,8 @@ int ssl_sock_load_cert(char *path, struct bind_conf *bind_conf, int is_default, 
 
 				if ((ckchs = ckchs_lookup(fp))) {
 					cfgerr |= ssl_sock_load_ckchs(fp, ckchs, bind_conf, NULL, NULL, 0, is_default, &ckch_inst, err);
+					if (ckch_inst)
+						ckch_inst->bundle_id = bundle_id;
 					found++;
 				} else {
 					if (stat(fp, &buf) == 0) {
@@ -3786,6 +3797,8 @@ int ssl_sock_load_cert(char *path, struct bind_conf *bind_conf, int is_default, 
 						if (!ckchs)
 							cfgerr |= ERR_ALERT | ERR_FATAL;
 						cfgerr |= ssl_sock_load_ckchs(fp, ckchs, bind_conf, NULL, NULL, 0, is_default, &ckch_inst, err);
+						if (ckch_inst)
+							ckch_inst->bundle_id = bundle_id;
 					}
 				}
 			}
