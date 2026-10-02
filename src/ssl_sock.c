@@ -3651,6 +3651,51 @@ static int ssl_sock_load_srv_ckchs(const char *path, struct ckch_store *ckchs,
 	return errcode;
 }
 
+/* Bundle members may only share a context if they are exposed under exactly
+ * the same SNI names. A bundle with different SANs keeps the normal separate
+ * context behavior. */
+static int ssl_sock_bundle_same_sni(const struct ckch_inst *a, const struct ckch_inst *b)
+{
+	struct sni_ctx *sa, *sb;
+	int count_a = 0, count_b = 0;
+	int found;
+
+	list_for_each_entry(sa, &a->sni_ctx, by_ckch_inst) {
+		count_a++;
+		found = 0;
+		list_for_each_entry(sb, &b->sni_ctx, by_ckch_inst) {
+			if (sa->wild == sb->wild && sa->neg == sb->neg &&
+			    strcmp((const char *)sa->name.key, (const char *)sb->name.key) == 0) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found)
+			return 0;
+	}
+	list_for_each_entry(sb, &b->sni_ctx, by_ckch_inst)
+		count_b++;
+	return count_a == count_b;
+}
+
+static int ssl_sock_bundle_key_type(const struct ckch_inst *inst)
+{
+	EVP_PKEY *key = X509_get_pubkey(inst->ckch_store->data->cert);
+	int type = key ? EVP_PKEY_base_id(key) : EVP_PKEY_NONE;
+
+	EVP_PKEY_free(key);
+	return type;
+}
+
+static void ssl_sock_link_bundle(struct ckch_inst *rsa, struct ckch_inst *ecdsa)
+{
+	if (!rsa || !ecdsa || !rsa->bundle_id || rsa->bundle_id != ecdsa->bundle_id ||
+	    rsa->bind_conf != ecdsa->bind_conf || !ssl_sock_bundle_same_sni(rsa, ecdsa))
+		return;
+	rsa->bundle_peer = ecdsa;
+	ecdsa->bundle_peer = rsa;
+}
+
 
 
 
@@ -3686,6 +3731,8 @@ int ssl_sock_load_cert_list_file(char *file, int dir, struct bind_conf *bind_con
 	struct bind_conf_list *bind_conf_node = NULL;
 	int cfgerr = 0;
 	char *end;
+	uint64_t current_bundle_id = 0;
+	struct ckch_inst *bundle_rsa = NULL, *bundle_ecdsa = NULL;
 
 	bind_conf_node = malloc(sizeof(*bind_conf_node));
 	if (!bind_conf_node) {
@@ -3727,6 +3774,11 @@ int ssl_sock_load_cert_list_file(char *file, int dir, struct bind_conf *bind_con
 		int is_default = CKCH_INST_NO_DEFAULT;
 
 		store = entry->node.key;
+		if (entry->bundle_id != current_bundle_id) {
+			ssl_sock_link_bundle(bundle_rsa, bundle_ecdsa);
+			bundle_rsa = bundle_ecdsa = NULL;
+			current_bundle_id = entry->bundle_id;
+		}
 
 		/* if the SNI trees were empty the first "crt" become a default certificate,
 		 * it can be applied on multiple certificates if it's a bundle */
@@ -3740,9 +3792,16 @@ int ssl_sock_load_cert_list_file(char *file, int dir, struct bind_conf *bind_con
 			goto error;
 		}
 		ckch_inst->bundle_id = entry->bundle_id;
+		if (entry->bundle_id) {
+			switch (ssl_sock_bundle_key_type(ckch_inst)) {
+			case EVP_PKEY_RSA: bundle_rsa = ckch_inst; break;
+			case EVP_PKEY_EC:  bundle_ecdsa = ckch_inst; break;
+			}
+		}
 		LIST_APPEND(&entry->ckch_inst, &ckch_inst->by_crtlist_entry);
 		ckch_inst->crtlist_entry = entry;
 	}
+	ssl_sock_link_bundle(bundle_rsa, bundle_ecdsa);
 
 	/* add the bind_conf to the list */
 	bind_conf_node->next = crtlist->bind_conf;
@@ -3784,6 +3843,7 @@ int ssl_sock_load_cert(char *path, struct bind_conf *bind_conf, int is_default, 
 	struct ckch_store *ckchs;
 	struct ckch_inst *ckch_inst = NULL;
 	int found = 0; /* did we found a file to load ? */
+	struct ckch_inst *bundle_rsa = NULL, *bundle_ecdsa = NULL;
 
 	/* if the SNI trees were empty the first "crt" become a default certificate,
 	 * it can be applied on multiple certificates if it's a bundle */
@@ -3834,6 +3894,10 @@ int ssl_sock_load_cert(char *path, struct bind_conf *bind_conf, int is_default, 
 					cfgerr |= ssl_sock_load_ckchs(fp, ckchs, bind_conf, NULL, NULL, 0, is_default, &ckch_inst, err);
 					if (ckch_inst)
 						ckch_inst->bundle_id = bundle_id;
+					if (ckch_inst && ssl_sock_bundle_key_type(ckch_inst) == EVP_PKEY_RSA)
+						bundle_rsa = ckch_inst;
+					if (ckch_inst && ssl_sock_bundle_key_type(ckch_inst) == EVP_PKEY_EC)
+						bundle_ecdsa = ckch_inst;
 					found++;
 				} else {
 					if (stat(fp, &buf) == 0) {
@@ -3844,9 +3908,14 @@ int ssl_sock_load_cert(char *path, struct bind_conf *bind_conf, int is_default, 
 						cfgerr |= ssl_sock_load_ckchs(fp, ckchs, bind_conf, NULL, NULL, 0, is_default, &ckch_inst, err);
 						if (ckch_inst)
 							ckch_inst->bundle_id = bundle_id;
+						if (ckch_inst && ssl_sock_bundle_key_type(ckch_inst) == EVP_PKEY_RSA)
+							bundle_rsa = ckch_inst;
+						if (ckch_inst && ssl_sock_bundle_key_type(ckch_inst) == EVP_PKEY_EC)
+							bundle_ecdsa = ckch_inst;
 					}
 				}
 			}
+			ssl_sock_link_bundle(bundle_rsa, bundle_ecdsa);
 #if HA_OPENSSL_VERSION_NUMBER < 0x10101000L
 			if (found) {
 				memprintf(err, "%sCan't load '%s'. Loading a multi certificates bundle requires OpenSSL >= 1.1.1\n",
