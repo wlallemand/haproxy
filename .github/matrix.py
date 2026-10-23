@@ -113,22 +113,6 @@ def determine_quictls_commit(ssl):
     sha = commit["sha"]
     return "{} QUICTLS_COMMIT={}".format(ssl, sha), "{}+{}".format(ssl, sha[:8])
 
-def aws_lc_fips_version_string_to_num(version_string):
-    return tuple(map(int, version_string[12:].split('.')))
-
-def aws_lc_fips_version_valid(version_string):
-    return re.match(r'^AWS-LC-FIPS-[0-9]+(\.[0-9]+)*$', version_string)
-
-@functools.lru_cache(5)
-def determine_latest_aws_lc_fips(ssl):
-    tags = get_all_github_tags("https://api.github.com/repos/aws/aws-lc/tags")
-    if not tags:
-        return "AWS_LC_FIPS_VERSION=failed_to_detect"
-    valid_tags = list(filter(aws_lc_fips_version_valid, tags))
-    if not valid_tags:
-        return "AWS_LC_FIPS_VERSION=failed_to_detect"
-    latest_tag = max(valid_tags, key=aws_lc_fips_version_string_to_num)
-    return "AWS_LC_FIPS_VERSION={}".format(latest_tag[12:])
 
 def wolfssl_version_string_to_num(version_string):
     return tuple(map(int, version_string[1:].removesuffix('-stable').split('.')))
