@@ -101,6 +101,20 @@ def determine_aws_lc_branch(ssl):
     return "AWS_LC_VERSION=git-{}".format(sha), "AWS_LC_VERSION={}+{}".format(release, sha[:8])
 
 @functools.lru_cache(5)
+def determine_aws_lc(ssl):
+    """Resolve an AWS_LC_VERSION spec to the build environment and cache identity.
+
+    Branch specs resolve to the immutable archive of their current head, other
+    specs (the "latest" tag) are used as-is.
+    """
+    if ssl.startswith("AWS_LC_VERSION=branch-"):
+        return determine_aws_lc_branch(ssl)
+    if ssl == "AWS_LC_VERSION=latest":
+        latest = determine_latest_aws_lc(ssl)
+        return latest, latest
+    return ssl, ssl
+
+@functools.lru_cache(5)
 def determine_quictls_commit(ssl):
     ref = ssl.split("=", 1)[1]
     headers = {}
@@ -281,11 +295,10 @@ def main(ref_name):
                 flags.append("SSL_INC=${HOME}/opt/include")
             if ssl.startswith("QUICTLS_VERSION="):
                 ssl, ssl_name = determine_quictls_commit(ssl)
-            if ssl.startswith("AWS_LC_VERSION=branch-"):
-                ssl, ssl_name = determine_aws_lc_branch(ssl)
-            if "AWS_LC" in ssl and "latest" in ssl:
-                ssl = determine_latest_aws_lc(ssl)
-                skipdup=1
+            if ssl.startswith("AWS_LC_VERSION="):
+                if ssl == "AWS_LC_VERSION=latest":
+                    skipdup=1
+                ssl, ssl_name = determine_aws_lc(ssl)
             if "LIBRESSL" in ssl and "latest" in ssl:
                 ssl = determine_latest_libressl(ssl)
                 skipdup=1
